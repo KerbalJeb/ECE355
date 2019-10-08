@@ -162,7 +162,7 @@ void TIM2_IRQHandler()
 void EXTI0_1_IRQHandler()
 {
 	// Your local variables...
-	__disable_irq();
+	EXTI->IMR &= ~EXTI_IMR_MR1;
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
@@ -199,7 +199,7 @@ void EXTI0_1_IRQHandler()
 		//
 		EXTI->PR |= EXTI_PR_PR1;
 	}
-	__enable_irq();
+	EXTI->IMR |= EXTI_IMR_MR1;
 }
 
 
