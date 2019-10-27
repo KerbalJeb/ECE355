@@ -45,9 +45,13 @@
 void myGPIOA_Init(void);
 void myTIM2_Init(void);
 void myEXTI_Init(void);
+void delay(uint32_t time);
+void analogWrite(uint16_t value);
+uint32_t analogRead(void);
 
 // Your global variables...
 uint8_t started_timer = 0x00;
+uint32_t data;
 
 int
 main(int argc, char* argv[])
@@ -59,14 +63,73 @@ main(int argc, char* argv[])
 	myGPIOA_Init();		/* Initialize I/O port PA */
 	myTIM2_Init();		/* Initialize timer TIM2 */
 	myEXTI_Init();		/* Initialize EXTI */
+	myDAC_init();
+	analogWrite(4095);
 
 	while (1)
 	{
-		__asm("nop");
+
+		data = analogRead();
+		trace_printf("%d\n", data);
 		// Nothing is going on here...
 	}
 
 	return 0;
+
+}
+
+/************************
+ * HELPER FUNCTIONS******
+ ************************
+ **/
+
+void analogWrite(uint16_t value){
+	DAC->DHR12R1 = (uint32_t)value;
+}
+
+void delay(uint32_t time){
+//	Simple busy wait
+	for (uint32_t i=0; i<time *4800; i++){
+		__asm("nop");
+	}
+}
+
+uint32_t analogRead(void){
+	return ((uint32_t)ADC1->DR);
+}
+
+/********************
+ * INIT FUNCTIONS****
+ ********************
+ **/
+
+void myDAC_init(){
+// Configure PA4 as DAC
+//	Set PA4 to analog mode
+	GPIOA->MODER |= GPIO_MODER_MODER4;
+// Enable DAC
+	RCC->APB1ENR |= RCC_APB1ENR_DACEN;
+	DAC->CR |= DAC_CR_EN1;
+
+}
+
+void myADC_init(){
+//	Set PA0 to analog mode
+	GPIOA->MODER |= GPIO_MODER_MODER0;
+//	Enable ADC Clock
+	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+//	Calibrate ADC
+	ADC1->CR |= ADC_CR_ADCAL;
+	while (ADC1->CR & ADC_CR_ADCAL);
+//	Enable ADC
+
+	ADC1->CR |= ADC_CR_ADEN;
+	while (ADC1->ISR & ADC_ISR_ADRDY);
+
+	ADC1->CHSELR |= ADC_CHSELR_CHSEL0;
+	ADC1->CFGR1 |= ADC_CFGR1_CONT;
+
+	ADC1->CR |= ADC_CR_ADSTART;
 
 }
 
@@ -137,6 +200,11 @@ void myEXTI_Init()
 	// Relevant register: NVIC->ISER[0], or use NVIC_EnableIRQ
 	NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
+
+/*********
+ * ISRs***
+ *********
+ * */
 
 
 /* This handler is declared in system/src/cmsis/vectors_stm32f0xx.c */
