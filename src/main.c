@@ -103,6 +103,40 @@ uint32_t analogRead(void){
  * INIT FUNCTIONS****
  ********************/
 
+void mySPI_init(){
+//  Configure GPIO
+
+//  Enable clock to gpiob
+  RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+
+//  Configure PB3 & PB5 for use with spi
+//  Set AF Mode
+  GPIOB->MODER |= GPIO_MODER_MODER3_1;
+  GPIOB->MODER |= GPIO_MODER_MODER5_1;
+
+//  Make sure the afr is set to AF0 for PB3 and PB5
+  GPIOB->AFR |= ~(0x00F0F000);
+
+//  TODO: Configure pin for LCK signal
+
+
+//  Enable Clock
+  RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+// Configure SPI
+  SPI_InitTypeDef SPI_Init_Struct;
+  SPI_Init_Struct.SPI_BaudRatePrescaler = 0x7;
+  SPI_Init_Struct.SPI_Mode = SPI_Mode_Master;
+  SPI_Init_Struct.SPI_Direction = SPI_Direction_1Line_Tx;
+  SPI_Init_Struct.SPI_CPOL = SPI_CPOL_Low;
+  SPI_Init_Struct.SPI_CPHA = SPI_CPHA_1Edge;
+  SPI_Init_Struct.SPI_NSS = SPI_NSS_Soft;
+  SPI_Init_Struct.SPI_DataSize = SPI_DataSize_8b;
+  SPI_Init_Struct.SPI_FirstBit = SPI_FirstBit_MSB;
+
+  SPI_Init(SPI1, &SPI_Init_Struct);
+  SPI_Cmd(SPI1, ENABLE);
+}
+
 void myDAC_init(){
 // Configure PA4 as DAC
 //	Set PA4 to analog mode
