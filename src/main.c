@@ -46,8 +46,11 @@
 void myGPIOA_Init(void);
 void myTIM2_Init(void);
 void myEXTI_Init(void);
+void myADC_init(void);
+void myDAC_init(void);
 void delay(uint32_t time);
 void analogWrite(uint16_t value);
+void mySPI_init(void);
 uint32_t analogRead(void);
 
 // Your global variables...
@@ -65,15 +68,15 @@ main(int argc, char* argv[])
 	myTIM2_Init();		/* Initialize timer TIM2 */
 	myEXTI_Init();		/* Initialize EXTI */
 	myDAC_init();
+	mySPI_init();
 	myADC_init();
 	analogWrite(4095);
+	shiftOutBit(0xf3);
 
 	while (1)
 	{
-
 		data = analogRead();
 		trace_printf("%d\n", data);
-		// Nothing is going on here...
 	}
 
 	return 0;
@@ -84,19 +87,31 @@ main(int argc, char* argv[])
  * HELPER FUNCTIONS******
  ************************/
 
+void shiftOutBit(uint8_t data){
+//	Set LCK to 0
+	GPIOB->ODR &= ~GPIO_ODR_4;
+	while(!(SPI1->SR & SPI_SR_TXE)){}
+	SPI_SendData8(SPI1, data);
+//	Set LCK to 1
+	GPIOB->ODR |= GPIO_ODR_4;
+}
+
 void analogWrite(uint16_t value){
 	DAC->DHR12R1 = (uint32_t)value;
 }
 
 void delay(uint32_t time){
 //	Simple busy wait
+
 	for (uint32_t i=0; i<time *4800; i++){
 		__asm("nop");
 	}
 }
 
 uint32_t analogRead(void){
-	return ((uint32_t)ADC1->DR);
+	ADC1->CR |= ADC_CR_ADSTART;
+	while(!(ADC1->ISR & ADC_ISR_EOC)){}
+	return ((uint32_t)(ADC1->DR & ADC_DR_DATA));
 }
 
 /********************
@@ -115,9 +130,11 @@ void mySPI_init(){
   GPIOB->MODER |= GPIO_MODER_MODER5_1;
 
 //  Make sure the afr is set to AF0 for PB3 and PB5
-  GPIOB->AFR |= ~(0x00F0F000);
+  GPIOB->AFR[0] |= ~(0x00F0F000);
 
-//  TODO: Configure pin for LCK signal
+
+//	Configure pin for LCK signal
+  GPIOB->MODER |= GPIO_MODER_MODER4_0;
 
 
 //  Enable Clock
@@ -132,6 +149,7 @@ void mySPI_init(){
   SPI_Init_Struct.SPI_NSS = SPI_NSS_Soft;
   SPI_Init_Struct.SPI_DataSize = SPI_DataSize_8b;
   SPI_Init_Struct.SPI_FirstBit = SPI_FirstBit_MSB;
+  SPI_Init_Struct.SPI_CRCPolynomial = 7;
 
   SPI_Init(SPI1, &SPI_Init_Struct);
   SPI_Cmd(SPI1, ENABLE);
@@ -153,17 +171,17 @@ void myADC_init(){
 //	Enable ADC Clock
 	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
 //	Calibrate ADC
+
 	ADC1->CR |= ADC_CR_ADCAL;
-	while (ADC1->CR & ADC_CR_ADCAL);
+	while (ADC1->CR & ADC_CR_ADCAL){}
+
 //	Enable ADC
-
 	ADC1->CR |= ADC_CR_ADEN;
-	while (ADC1->ISR & ADC_ISR_ADRDY);
+	while (ADC1->ISR & ADC_ISR_ADRDY){}
 
-	ADC1->CHSELR |= ADC_CHSELR_CHSEL0;
+	ADC1->CHSELR = ADC_CHSELR_CHSEL0;
+
 	ADC1->CFGR1 |= ADC_CFGR1_CONT;
-
-	ADC1->CR |= ADC_CR_ADSTART;
 
 }
 
