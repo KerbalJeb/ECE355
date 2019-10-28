@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include "diag/Trace.h"
 #include "cmsis/cmsis_device.h"
+#include "stm32f0xx_spi.h"
 
 // ----------------------------------------------------------------------------
 //
@@ -64,6 +65,7 @@ main(int argc, char* argv[])
 	myTIM2_Init();		/* Initialize timer TIM2 */
 	myEXTI_Init();		/* Initialize EXTI */
 	myDAC_init();
+	myADC_init();
 	analogWrite(4095);
 
 	while (1)
@@ -80,8 +82,7 @@ main(int argc, char* argv[])
 
 /************************
  * HELPER FUNCTIONS******
- ************************
- **/
+ ************************/
 
 void analogWrite(uint16_t value){
 	DAC->DHR12R1 = (uint32_t)value;
@@ -100,8 +101,7 @@ uint32_t analogRead(void){
 
 /********************
  * INIT FUNCTIONS****
- ********************
- **/
+ ********************/
 
 void myDAC_init(){
 // Configure PA4 as DAC
@@ -201,10 +201,9 @@ void myEXTI_Init()
 	NVIC_EnableIRQ(EXTI0_1_IRQn);
 }
 
-/*********
- * ISRs***
- *********
- * */
+/************
+ ****ISRs****
+ ***********/
 
 
 /* This handler is declared in system/src/cmsis/vectors_stm32f0xx.c */
