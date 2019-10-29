@@ -51,7 +51,10 @@ void myDAC_init(void);
 void delay(uint32_t time);
 void analogWrite(uint16_t value);
 void mySPI_init(void);
+void myLCD_init();
 uint32_t analogRead(void);
+void shiftOutBit(uint8_t data);
+void sendToLCD(uint8_t data, uint8_t RS);
 
 // Your global variables...
 uint8_t started_timer = 0x00;
@@ -70,13 +73,24 @@ main(int argc, char* argv[])
 	myDAC_init();
 	mySPI_init();
 	myADC_init();
-	analogWrite(4095);
-	shiftOutBit(0xf3);
+	myLCD_init();
+
+	sendToLCD(0x81, 0);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+	sendToLCD('a', 1);
+
 
 	while (1)
 	{
 		data = analogRead();
-		trace_printf("%d\n", data);
+		analogWrite(data);
+//		trace_printf("%d\n", data);
 	}
 
 	return 0;
@@ -87,11 +101,28 @@ main(int argc, char* argv[])
  * HELPER FUNCTIONS******
  ************************/
 
+void sendToLCD(uint8_t data, uint8_t RS){
+	uint8_t data_low = data & 0x0f;
+	uint8_t data_high = (data & 0xf0) >> 4;
+
+	sendToLCD_4bit(data_high, RS);
+	sendToLCD_4bit(data_low, RS);
+}
+
+void sendToLCD_4bit(uint8_t data, uint8_t RS){
+	data = (data & 0x0f) | (RS<<7);
+
+	shiftOutBit(data);
+	shiftOutBit(data | 0x80);
+	shiftOutBit(data);
+}
+
 void shiftOutBit(uint8_t data){
 //	Set LCK to 0
 	GPIOB->ODR &= ~GPIO_ODR_4;
 	while(!(SPI1->SR & SPI_SR_TXE)){}
 	SPI_SendData8(SPI1, data);
+	while(SPI1->SR & SPI_SR_BSY){}
 //	Set LCK to 1
 	GPIOB->ODR |= GPIO_ODR_4;
 }
@@ -103,7 +134,7 @@ void analogWrite(uint16_t value){
 void delay(uint32_t time){
 //	Simple busy wait
 
-	for (uint32_t i=0; i<time *4800; i++){
+	for (uint32_t i=0; i<time *48000; i++){
 		__asm("nop");
 	}
 }
@@ -117,6 +148,15 @@ uint32_t analogRead(void){
 /********************
  * INIT FUNCTIONS****
  ********************/
+
+void myLCD_init(){
+	sendToLCD(0x82, 0);
+	sendToLCD(0x28, 0);
+	sendToLCD(0x0c, 0);
+	sendToLCD(0x06, 0);
+	sendToLCD(0x01, 0);
+	delay(25);
+}
 
 void mySPI_init(){
 //  Configure GPIO
@@ -135,13 +175,14 @@ void mySPI_init(){
 
 //	Configure pin for LCK signal
   GPIOB->MODER |= GPIO_MODER_MODER4_0;
+  GPIOB->OSPEEDR |= (0x3 << 8);
 
 
 //  Enable Clock
   RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
 // Configure SPI
   SPI_InitTypeDef SPI_Init_Struct;
-  SPI_Init_Struct.SPI_BaudRatePrescaler = 0x7;
+  SPI_Init_Struct.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_256;
   SPI_Init_Struct.SPI_Mode = SPI_Mode_Master;
   SPI_Init_Struct.SPI_Direction = SPI_Direction_1Line_Tx;
   SPI_Init_Struct.SPI_CPOL = SPI_CPOL_Low;
