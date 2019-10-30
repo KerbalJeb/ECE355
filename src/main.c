@@ -43,6 +43,11 @@
 /* Maximum possible setting for overflow */
 #define myTIM2_PERIOD ((uint32_t)0xFFFFFFFF)
 
+#define PRINT_LCD_MSG 0x00
+
+#define RS 0x40
+#define EN 0x80
+
 void myGPIOA_Init(void);
 void myTIM2_Init(void);
 void myEXTI_Init(void);
@@ -54,7 +59,8 @@ void mySPI_init(void);
 void myLCD_init();
 uint32_t analogRead(void);
 void shiftOutBit(uint8_t data);
-void sendToLCD(uint8_t data, uint8_t RS);
+void sendToLCD(uint8_t data, uint8_t cmd);
+void sendToLCD_4bit(uint8_t data, uint8_t cmd);
 
 // Your global variables...
 uint8_t started_timer = 0x00;
@@ -75,16 +81,8 @@ main(int argc, char* argv[])
 	myADC_init();
 	myLCD_init();
 
-	sendToLCD(0x81, 0);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-	sendToLCD('a', 1);
-
+	sendToLCD(0x80, 0);
+	sendToLCD('a', RS);
 
 	while (1)
 	{
@@ -101,24 +99,33 @@ main(int argc, char* argv[])
  * HELPER FUNCTIONS******
  ************************/
 
-void sendToLCD(uint8_t data, uint8_t RS){
+void sendToLCD(uint8_t data, uint8_t cmd){
 	uint8_t data_low = data & 0x0f;
+	if (PRINT_LCD_MSG){
+	    trace_printf("Sending: %x\n", data);
+	}
+
 	uint8_t data_high = (data & 0xf0) >> 4;
 
-	sendToLCD_4bit(data_high, RS);
-	sendToLCD_4bit(data_low, RS);
+	sendToLCD_4bit(data_high, cmd);
+	sendToLCD_4bit(data_low, cmd);
 }
 
-void sendToLCD_4bit(uint8_t data, uint8_t RS){
-	data = (data & 0x0f) | (RS<<7);
+void sendToLCD_4bit(uint8_t data, uint8_t cmd){
+	data = (data & 0x0f) | cmd;
 
 	shiftOutBit(data);
-	shiftOutBit(data | 0x80);
+	shiftOutBit(data | EN);
 	shiftOutBit(data);
 }
 
 void shiftOutBit(uint8_t data){
 //	Set LCK to 0
+  if (PRINT_LCD_MSG){
+      trace_printf("Shifting out: %x\n", data);
+  }
+
+
 	GPIOB->ODR &= ~GPIO_ODR_4;
 	while(!(SPI1->SR & SPI_SR_TXE)){}
 	SPI_SendData8(SPI1, data);
@@ -134,7 +141,7 @@ void analogWrite(uint16_t value){
 void delay(uint32_t time){
 //	Simple busy wait
 
-	for (uint32_t i=0; i<time *48000; i++){
+	for (uint32_t i=0; i<time *16000; i++){
 		__asm("nop");
 	}
 }
@@ -150,7 +157,7 @@ uint32_t analogRead(void){
  ********************/
 
 void myLCD_init(){
-	sendToLCD(0x82, 0);
+	shiftOutBit(0x02);
 	sendToLCD(0x28, 0);
 	sendToLCD(0x0c, 0);
 	sendToLCD(0x06, 0);
