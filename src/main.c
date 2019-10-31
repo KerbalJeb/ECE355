@@ -101,11 +101,10 @@ main(int argc, char* argv[])
 
 void sendToLCD(uint8_t data, uint8_t cmd){
 	uint8_t data_low = data & 0x0f;
+	uint8_t data_high = ((data & 0xF0) >> 4);
 	if (PRINT_LCD_MSG){
 	    trace_printf("Sending: %x\n", data);
 	}
-
-	uint8_t data_high = (data & 0xf0) >> 4;
 
 	sendToLCD_4bit(data_high, cmd);
 	sendToLCD_4bit(data_low, cmd);
@@ -120,12 +119,12 @@ void sendToLCD_4bit(uint8_t data, uint8_t cmd){
 }
 
 void shiftOutBit(uint8_t data){
-//	Set LCK to 0
+
   if (PRINT_LCD_MSG){
       trace_printf("Shifting out: %x\n", data);
   }
 
-
+  //  Set LCK to 0
 	GPIOB->ODR &= ~GPIO_ODR_4;
 	while(!(SPI1->SR & SPI_SR_TXE)){}
 	SPI_SendData8(SPI1, data);
@@ -141,7 +140,7 @@ void analogWrite(uint16_t value){
 void delay(uint32_t time){
 //	Simple busy wait
 
-	for (uint32_t i=0; i<time *16000; i++){
+	for (uint32_t i=0; i<time*3200; i++){
 		__asm("nop");
 	}
 }
@@ -157,12 +156,13 @@ uint32_t analogRead(void){
  ********************/
 
 void myLCD_init(){
-	shiftOutBit(0x02);
+  sendToLCD(0x02, 0);
+  delay(2);
 	sendToLCD(0x28, 0);
 	sendToLCD(0x0c, 0);
 	sendToLCD(0x06, 0);
 	sendToLCD(0x01, 0);
-	delay(25);
+	delay(2);
 }
 
 void mySPI_init(){
@@ -170,6 +170,11 @@ void mySPI_init(){
 
 //  Enable clock to gpiob
   RCC->AHBENR |= RCC_AHBENR_GPIOBEN;
+
+//  Configure pin for LCK signal
+  GPIOB->MODER |= GPIO_MODER_MODER4_0;
+  GPIOB->OSPEEDR |= (0x3 << 8);
+  GPIOB->ODR |= GPIO_ODR_4;
 
 //  Configure PB3 & PB5 for use with spi
 //  Set AF Mode
@@ -179,10 +184,6 @@ void mySPI_init(){
 //  Make sure the afr is set to AF0 for PB3 and PB5
   GPIOB->AFR[0] |= ~(0x00F0F000);
 
-
-//	Configure pin for LCK signal
-  GPIOB->MODER |= GPIO_MODER_MODER4_0;
-  GPIOB->OSPEEDR |= (0x3 << 8);
 
 
 //  Enable Clock
@@ -201,6 +202,7 @@ void mySPI_init(){
 
   SPI_Init(SPI1, &SPI_Init_Struct);
   SPI_Cmd(SPI1, ENABLE);
+  GPIOB->ODR &= ~GPIO_ODR_4;
 }
 
 void myDAC_init(){
