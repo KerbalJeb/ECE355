@@ -48,6 +48,9 @@
 #define RS 0x40
 #define EN 0x80
 
+#define LINE_1 0x80
+#define LINE_2 0xC0
+
 void myGPIOA_Init(void);
 void myTIM2_Init(void);
 void myEXTI_Init(void);
@@ -59,12 +62,16 @@ void mySPI_init(void);
 void myLCD_init();
 uint32_t analogRead(void);
 void shiftOutBit(uint8_t data);
-void sendToLCD(uint8_t data, uint8_t cmd);
+void sendWordToLCD(uint8_t data, uint8_t cmd);
 void sendToLCD_4bit(uint8_t data, uint8_t cmd);
+void displayString(char * str, uint8_t line);
+void displayData(uint32_t freq, uint32_t voltage);
 
 // Your global variables...
 uint8_t started_timer = 0x00;
-uint32_t data;
+uint8_t freq_measurement_done;
+uint32_t voltage;
+uint32_t freq;
 
 int
 main(int argc, char* argv[])
@@ -74,21 +81,26 @@ main(int argc, char* argv[])
 	trace_printf("System clock: %u Hz\n", SystemCoreClock);
 
 	myGPIOA_Init();		/* Initialize I/O port PA */
-	myTIM2_Init();		/* Initialize timer TIM2 */
-	myEXTI_Init();		/* Initialize EXTI */
 	myDAC_init();
 	mySPI_init();
 	myADC_init();
 	myLCD_init();
 
-	sendToLCD(0x80, 0);
-	sendToLCD('a', RS);
+	myTIM2_Init();		/* Initialize timer TIM2 */
+	myEXTI_Init();		/* Initialize EXTI */
+
+
 
 	while (1)
 	{
-		data = analogRead();
-		analogWrite(data);
-//		trace_printf("%d\n", data);
+		voltage = analogRead();
+		analogWrite(voltage);
+		/* Unmask interrupts from EXTI1 line */
+		freq_measurement_done = 0x00;
+		EXTI->IMR |= EXTI_IMR_MR1;
+		while (!freq_measurement_done){}
+		EXTI->IMR &= ~EXTI_IMR_MR1;
+		displayData(freq, voltage);
 	}
 
 	return 0;
@@ -99,7 +111,32 @@ main(int argc, char* argv[])
  * HELPER FUNCTIONS******
  ************************/
 
-void sendToLCD(uint8_t data, uint8_t cmd){
+void displayData(uint32_t freq, uint32_t voltage){
+	uint32_t res = 5000 - voltage*5000/4095;
+	char line_1[8];
+	char line_2[8];
+
+	sprintf(line_1, "%d Hz", freq);
+	sprintf(line_2, "%d R", res);
+	sendWordToLCD(0x01, 0);
+	delay(1);
+	displayString(line_1, LINE_1);
+	displayString(line_2, LINE_2);
+	delay(500);
+}
+
+void displayString(char * str, uint8_t line){
+	sendWordToLCD(line, 0);
+	delay(1);
+	while(*str != '\0'){
+		sendWordToLCD((uint8_t)(*str), RS);
+		str++;
+		delay(1);
+	}
+
+}
+
+void sendWordToLCD(uint8_t data, uint8_t cmd){
 	uint8_t data_low = data & 0x0f;
 	uint8_t data_high = ((data & 0xF0) >> 4);
 	if (PRINT_LCD_MSG){
@@ -156,12 +193,12 @@ uint32_t analogRead(void){
  ********************/
 
 void myLCD_init(){
-  sendToLCD(0x02, 0);
+  sendWordToLCD(0x02, 0);
   delay(2);
-	sendToLCD(0x28, 0);
-	sendToLCD(0x0c, 0);
-	sendToLCD(0x06, 0);
-	sendToLCD(0x01, 0);
+	sendWordToLCD(0x28, 0);
+	sendWordToLCD(0x0c, 0);
+	sendWordToLCD(0x06, 0);
+	sendWordToLCD(0x01, 0);
 	delay(2);
 }
 
@@ -291,9 +328,7 @@ void myEXTI_Init()
 	// Relevant register: EXTI->RTSR
 	EXTI->RTSR |= EXTI_RTSR_TR1;
 
-	/* Unmask interrupts from EXTI1 line */
-	// Relevant register: EXTI->IMR
-	EXTI->IMR |= EXTI_IMR_MR1;
+
 	/* Assign EXTI1 interrupt priority = 0 in NVIC */
 	// Relevant register: NVIC->IP[1], or use NVIC_SetPriority
 	NVIC_SetPriority(EXTI0_1_IRQn, 0);
@@ -331,7 +366,6 @@ void TIM2_IRQHandler()
 void EXTI0_1_IRQHandler()
 {
 	// Your local variables...
-	EXTI->IMR &= ~EXTI_IMR_MR1;
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
@@ -352,11 +386,16 @@ void EXTI0_1_IRQHandler()
 			uint32_t counts = TIM2->CNT;
 		//	- Calculate signal period and frequency.
 			uint32_t period = counts / 48;
-			uint32_t freq = 48e6/counts;
+			freq = 48e6/counts;
+
 		//	- Print calculated values to the console.
-			trace_printf("%d us\n", period);
-			trace_printf("%d Hz\n", freq);
+			if (PRINT_LCD_MSG){
+				trace_printf("%d us\n", period);
+				trace_printf("%d Hz\n", freq);
+			}
+
 			started_timer = 0x00;
+			freq_measurement_done = 0x01;
 		//	  NOTE: Function trace_printf does not work
 		//	  with floating-point numbers: you must use
 		//	  "unsigned int" type to print your signal
@@ -368,7 +407,6 @@ void EXTI0_1_IRQHandler()
 		//
 		EXTI->PR |= EXTI_PR_PR1;
 	}
-	EXTI->IMR |= EXTI_IMR_MR1;
 }
 
 
