@@ -45,61 +45,161 @@
 
 #define PRINT_LCD_MSG 0x00
 
+/* RS bit postion for LCD */
 #define RS 0x40
+/* EN bit postion for LCD */
 #define EN 0x80
-
+/* Base address for LCD line 1*/
 #define LINE_1 0x80
+/* Base address for LCD line 2*/
 #define LINE_2 0xC0
 
+/**
+ * @brief Enables GPIO port A and configures PA1 as an input 
+ * (for use with the EXTI inturrupt) 
+ * 
+ */
 void myGPIOA_Init(void);
+
+/**
+ * @brief Congfigures TIM2 with lowest prescaler and overflow interrupt
+ * (for mesauring pwm frequency)
+ *  
+ */
 void myTIM2_Init(void);
+
+/**
+ * @brief Enables EXTI and maps PA1 to EXTI1
+ * 
+ */
 void myEXTI_Init(void);
+
+/**
+ * @brief Initializes the ADC for PA0 
+ * 
+ */
 void myADC_init(void);
+
+/**
+ * @brief Initializes the DAC for PA4
+ * 
+ */
 void myDAC_init(void);
+
+/**
+ * @brief A simply busy wait delay
+ * 
+ * @param time How long the delay should be in ~miliseconds
+ */
 void delay(uint32_t time);
+
+/**
+ * @brief Outputs a true analog voltage on a PA4
+ * 
+ * @param value A value between 0-4095, that maps to a 0-3.3v output voltage
+ */
 void analogWrite(uint16_t value);
+
+/**
+ * @brief Configures the SPI periferal with lowsest possible clock speed
+ * using pins PB3 (SCK), PB5 (MOSI), PB4 (LCK, seprate from SPI peripheral)
+ * 
+ */
 void mySPI_init(void);
+
+/**
+ * @brief Sends initialization commands to the LCD
+ * 
+ */
 void myLCD_init();
+
+/**
+ * @brief Reads a value from the PA0 ADC
+ * 
+ * @return uint32_t A value from 0-4095, coresponding to an input voltage
+ * from 0-3.3v
+ */
 uint32_t analogRead(void);
+
+/**
+ * @brief Sends a byte of data to the shift register
+ * 
+ * @param data 
+ */
 void shiftOutBit(uint8_t data);
+
+/**
+ * @brief Sends a byte of data to the LCD (in 4 bit mode)
+ * 
+ * @param data The data so send (ex. ASCII code)
+ * @param cmd Command bits to set (ex. EN or RS bits)
+ */
 void sendWordToLCD(uint8_t data, uint8_t cmd);
+
+/**
+ * @brief Sends a 4 bit, half word to the LCD
+ * 
+ * @param data The 4 bits of data to send
+ * @param cmd Command bits to set (ex. EN or RS bits)
+ */
 void sendToLCD_4bit(uint8_t data, uint8_t cmd);
+
+/**
+ * @brief Sends a string to the LCD
+ * does not perform any length checks on string
+ * 
+ * @param str The string to write
+ * @param line The base address of the line to write to 
+ * (LINE_1 or LINE_2)
+ */
 void displayString(char * str, uint8_t line);
+
+/**
+ * @brief Used to display resistance and frequency data on the display
+ * 
+ * @param freq The current frequency (true value in Hz)
+ * @param voltage The raw voltage reading from ADC (0-4095)
+ */
 void displayData(uint32_t freq, uint32_t voltage);
 
-// Your global variables...
-uint8_t started_timer = 0x00;
-uint8_t freq_measurement_done;
+// Global variables, updated in EXTI ISR
+volatile uint8_t started_timer = 0x00;
+volatile uint8_t freq_measurement_done;
 uint32_t voltage;
 uint32_t freq;
 
 int
 main(int argc, char* argv[])
 {
-
-	trace_printf("This is Part 2 of Introductory Lab...\n");
-	trace_printf("System clock: %u Hz\n", SystemCoreClock);
-
-	myGPIOA_Init();		/* Initialize I/O port PA */
+	/*Perform Initializations*/
+	myGPIOA_Init();		
 	myDAC_init();
 	mySPI_init();
 	myADC_init();
 	myLCD_init();
-
-	myTIM2_Init();		/* Initialize timer TIM2 */
-	myEXTI_Init();		/* Initialize EXTI */
+	myTIM2_Init();		
+	myEXTI_Init();		
 
 
 
 	while (1)
 	{
+		/*Get the input voltage from the ADC and write it to the DAC 
+		 * (both are 12 bit, so no conversion is needed)
+		*/
 		voltage = analogRead();
 		analogWrite(voltage);
-		/* Unmask interrupts from EXTI1 line */
+		
+		/*Unmask the EXTI inturupts, wait for a frequency measurement 
+		 * to compleate and then disable the EXTI inturupts
+		 * This is to ensure only valid data is written to the display
+		*/
+
 		freq_measurement_done = 0x00;
 		EXTI->IMR |= EXTI_IMR_MR1;
 		while (!freq_measurement_done){}
 		EXTI->IMR &= ~EXTI_IMR_MR1;
+		/*Write data to display*/
 		displayData(freq, voltage);
 	}
 
@@ -111,24 +211,30 @@ main(int argc, char* argv[])
  * HELPER FUNCTIONS******
  ************************/
 
-void displayData(uint32_t freq, uint32_t voltage){
+void displayData(uint32_t freq, uint32_t voltage){	
+	
 	uint32_t res = 5000 - voltage*5000/4095;
 	char line_1[8];
 	char line_2[8];
-
+	/* Format data as string */
 	sprintf(line_1, "%d Hz", freq);
 	sprintf(line_2, "%d R", res);
+	/* Clear the display */
 	sendWordToLCD(0x01, 0);
 	delay(1);
+	/* Write new data */
 	displayString(line_1, LINE_1);
 	displayString(line_2, LINE_2);
 	delay(500);
 }
 
 void displayString(char * str, uint8_t line){
+	/* Set the base address for the line */
 	sendWordToLCD(line, 0);
 	delay(1);
+	/* Iterate over the string */
 	while(*str != '\0'){
+		/* Send the ASCII code to the display */
 		sendWordToLCD((uint8_t)(*str), RS);
 		str++;
 		delay(1);
@@ -137,19 +243,20 @@ void displayString(char * str, uint8_t line){
 }
 
 void sendWordToLCD(uint8_t data, uint8_t cmd){
+	/* Slit into high and low half */
 	uint8_t data_low = data & 0x0f;
 	uint8_t data_high = ((data & 0xF0) >> 4);
 	if (PRINT_LCD_MSG){
 	    trace_printf("Sending: %x\n", data);
 	}
-
+	/* Send high half, followed by low half */
 	sendToLCD_4bit(data_high, cmd);
 	sendToLCD_4bit(data_low, cmd);
 }
 
 void sendToLCD_4bit(uint8_t data, uint8_t cmd){
 	data = (data & 0x0f) | cmd;
-
+	/* Send the 4 bits of data, while pulsing the enable bit */
 	shiftOutBit(data);
 	shiftOutBit(data | EN);
 	shiftOutBit(data);
@@ -161,21 +268,27 @@ void shiftOutBit(uint8_t data){
       trace_printf("Shifting out: %x\n", data);
   }
 
-  //  Set LCK to 0
+    /* Set LCK to 0*/
 	GPIOB->ODR &= ~GPIO_ODR_4;
+	/* Wait for SPI transmit buffer to be empty */
 	while(!(SPI1->SR & SPI_SR_TXE)){}
+	/* Send the data */
 	SPI_SendData8(SPI1, data);
+	/* Wait for tranmission to compleate */
 	while(SPI1->SR & SPI_SR_BSY){}
-//	Set LCK to 1
+	/* Set LCK to 1 */
 	GPIOB->ODR |= GPIO_ODR_4;
 }
 
 void analogWrite(uint16_t value){
+	/* Update the 12 bit right aligned data holding register*/
 	DAC->DHR12R1 = (uint32_t)value;
 }
 
 void delay(uint32_t time){
-//	Simple busy wait
+	/**
+	 * Simple busy wait, 3200 determained expermentaly 
+	 */
 
 	for (uint32_t i=0; i<time*3200; i++){
 		__asm("nop");
@@ -183,8 +296,11 @@ void delay(uint32_t time){
 }
 
 uint32_t analogRead(void){
+	/* Start ADC converstion */
 	ADC1->CR |= ADC_CR_ADSTART;
+	/* Wait for end of conversion */
 	while(!(ADC1->ISR & ADC_ISR_EOC)){}
+	/* Return the ADC value */
 	return ((uint32_t)(ADC1->DR & ADC_DR_DATA));
 }
 
@@ -193,8 +309,9 @@ uint32_t analogRead(void){
  ********************/
 
 void myLCD_init(){
-  sendWordToLCD(0x02, 0);
-  delay(2);
+	/* Sends init sequence from lecture slides*/
+	sendWordToLCD(0x02, 0);
+	delay(2);
 	sendWordToLCD(0x28, 0);
 	sendWordToLCD(0x0c, 0);
 	sendWordToLCD(0x06, 0);
@@ -253,21 +370,20 @@ void myDAC_init(){
 }
 
 void myADC_init(){
-//	Set PA0 to analog mode
+	/* Set PA0 to analog mode */
 	GPIOA->MODER |= GPIO_MODER_MODER0;
-//	Enable ADC Clock
+	/* Enable ADC Clock */
 	RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
-//	Calibrate ADC
-
+	/* Calibrate ADC */
 	ADC1->CR |= ADC_CR_ADCAL;
 	while (ADC1->CR & ADC_CR_ADCAL){}
 
-//	Enable ADC
+	/* Enable ADC */
 	ADC1->CR |= ADC_CR_ADEN;
 	while (ADC1->ISR & ADC_ISR_ADRDY){}
 
+	/* Select channel 0 and use continuous mode */
 	ADC1->CHSELR = ADC_CHSELR_CHSEL0;
-
 	ADC1->CFGR1 |= ADC_CFGR1_CONT;
 
 }
@@ -365,7 +481,6 @@ void TIM2_IRQHandler()
 /* This handler is declared in system/src/cmsis/vectors_stm32f0xx.c */
 void EXTI0_1_IRQHandler()
 {
-	// Your local variables...
 	/* Check if EXTI1 interrupt pending flag is indeed set */
 	if ((EXTI->PR & EXTI_PR_PR1) != 0)
 	{
@@ -388,23 +503,17 @@ void EXTI0_1_IRQHandler()
 			uint32_t period = counts / 48;
 			freq = 48e6/counts;
 
-		//	- Print calculated values to the console.
+		//	- Print calculated values to the LCD.
 			if (PRINT_LCD_MSG){
 				trace_printf("%d us\n", period);
 				trace_printf("%d Hz\n", freq);
 			}
-
+			/* Update global flags */
 			started_timer = 0x00;
 			freq_measurement_done = 0x01;
-		//	  NOTE: Function trace_printf does not work
-		//	  with floating-point numbers: you must use
-		//	  "unsigned int" type to print your signal
-		//	  period and frequency.
-		//
 		}
 
 		// 2. Clear EXTI1 interrupt pending flag (EXTI->PR).
-		//
 		EXTI->PR |= EXTI_PR_PR1;
 	}
 }
